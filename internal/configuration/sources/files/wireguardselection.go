@@ -37,6 +37,7 @@ func (s *Source) readWireguardSelection() (selection settings.WireguardSelection
 			return selection, fmt.Errorf("parsing peer section: %w", err)
 		}
 	} else if !regexINISectionNotExist.MatchString(err.Error()) {
+		// can never happen
 		return selection, fmt.Errorf("getting peer section: %w", err)
 	}
 
@@ -64,14 +65,16 @@ func parseWireguardPeerSection(peerSection *ini.Section,
 		if ip == nil {
 			return fmt.Errorf("%w: %s", ErrEndpointHostNotIP, host)
 		}
-		selection.EndpointIP = ip
 
-		selection.EndpointPort = new(uint16)
-		*selection.EndpointPort, err = port.Validate(portString)
+		endpointPort, err := port.Validate(portString)
 		if err != nil {
 			return fmt.Errorf("port from Endpoint key: %w", err)
 		}
+
+		selection.EndpointIP = ip
+		selection.EndpointPort = &endpointPort
 	} else if !regexINIKeyNotExist.MatchString(err.Error()) {
+		// can never happen
 		return fmt.Errorf("getting endpoint key: %w", err)
 	}
 

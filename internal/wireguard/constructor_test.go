@@ -50,6 +50,9 @@ func Test_New(t *testing.T) {
 						IP:   net.IPv4(1, 2, 3, 4),
 						Port: 51820,
 					},
+					AllowedIPs: []*net.IPNet{
+						{IP: net.IPv4(0, 0, 0, 0), Mask: net.IPv4Mask(0, 0, 0, 0)},
+					},
 					Addresses: []*net.IPNet{{
 						IP:   net.IPv4(5, 6, 7, 8),
 						Mask: net.IPv4Mask(255, 255, 255, 255)},

@@ -21,6 +21,10 @@ type Wireguard struct {
 	// is no pre-shared key.
 	// It cannot be nil in the internal state.
 	PreSharedKey *string
+	// AllowedIPs are the Wireguard allowed IPs.
+	// If left unset, they default to '0.0.0.0/0' and,
+	// if ipv6 is supported, '::/0'.
+	AllowedIPs []net.IPNet
 	// Addresses are the Wireguard interface addresses.
 	Addresses []net.IPNet
 	// Interface is the name of the Wireguard interface
@@ -73,6 +77,18 @@ func (w Wireguard) validate(vpnProvider string, ipv6Supported bool) (err error) 
 		}
 	}
 
+	// Validate AllowedIPs
+	// No specified allowed IP implies the Wireguard implementation
+	// will set default allowed IPs to all IPv4 and all IPv6, if IPv6
+	// is supported by the system.
+	for _, ipNet := range w.AllowedIPs {
+		ipv6Net := ipNet.IP.To4() == nil
+		if ipv6Net && !ipv6Supported {
+			return fmt.Errorf("%w: address %s",
+				ErrWireguardAllowedIPv6, ipNet.String())
+		}
+	}
+
 	// Validate Addresses
 	if len(w.Addresses) == 0 {
 		return ErrWireguardInterfaceAddressNotSet
@@ -86,7 +102,7 @@ func (w Wireguard) validate(vpnProvider string, ipv6Supported bool) (err error) 
 		ipv6Net := ipNet.IP.To4() == nil
 		if ipv6Net && !ipv6Supported {
 			return fmt.Errorf("%w: address %s",
-				ErrWireguardInterfaceAddressIPv6, ipNet)
+				ErrWireguardInterfaceAddressIPv6, ipNet.String())
 		}
 	}
 
@@ -109,6 +125,7 @@ func (w *Wireguard) copy() (copied Wireguard) {
 	return Wireguard{
 		PrivateKey:     helpers.CopyStringPtr(w.PrivateKey),
 		PreSharedKey:   helpers.CopyStringPtr(w.PreSharedKey),
+		AllowedIPs:     helpers.CopyIPNetSlice(w.AllowedIPs),
 		Addresses:      helpers.CopyIPNetSlice(w.Addresses),
 		Interface:      w.Interface,
 		Implementation: w.Implementation,
@@ -118,6 +135,7 @@ func (w *Wireguard) copy() (copied Wireguard) {
 func (w *Wireguard) mergeWith(other Wireguard) {
 	w.PrivateKey = helpers.MergeWithStringPtr(w.PrivateKey, other.PrivateKey)
 	w.PreSharedKey = helpers.MergeWithStringPtr(w.PreSharedKey, other.PreSharedKey)
+	w.AllowedIPs = helpers.MergeIPNetsSlices(w.AllowedIPs, other.AllowedIPs)
 	w.Addresses = helpers.MergeIPNetsSlices(w.Addresses, other.Addresses)
 	w.Interface = helpers.MergeWithString(w.Interface, other.Interface)
 	w.Implementation = helpers.MergeWithString(w.Implementation, other.Implementation)
@@ -126,6 +144,7 @@ func (w *Wireguard) mergeWith(other Wireguard) {
 func (w *Wireguard) overrideWith(other Wireguard) {
 	w.PrivateKey = helpers.OverrideWithStringPtr(w.PrivateKey, other.PrivateKey)
 	w.PreSharedKey = helpers.OverrideWithStringPtr(w.PreSharedKey, other.PreSharedKey)
+	w.AllowedIPs = helpers.OverrideWithIPNetsSlice(w.AllowedIPs, other.AllowedIPs)
 	w.Addresses = helpers.OverrideWithIPNetsSlice(w.Addresses, other.Addresses)
 	w.Interface = helpers.OverrideWithString(w.Interface, other.Interface)
 	w.Implementation = helpers.OverrideWithString(w.Implementation, other.Implementation)
@@ -134,6 +153,8 @@ func (w *Wireguard) overrideWith(other Wireguard) {
 func (w *Wireguard) setDefaults() {
 	w.PrivateKey = helpers.DefaultStringPtr(w.PrivateKey, "")
 	w.PreSharedKey = helpers.DefaultStringPtr(w.PreSharedKey, "")
+	// Leave AllowedIPs empty by default, the wireguard package will take
+	// care of setting it with all IPv4 and all IPv6 is IPv6 is supported.
 	w.Interface = helpers.DefaultString(w.Interface, "wg0")
 	w.Implementation = helpers.DefaultString(w.Implementation, "auto")
 }
@@ -153,6 +174,13 @@ func (w Wireguard) toLinesNode() (node *gotree.Node) {
 	if *w.PreSharedKey != "" {
 		s := helpers.ObfuscateWireguardKey(*w.PreSharedKey)
 		node.Appendf("Pre-shared key: %s", s)
+	}
+
+	if len(w.AllowedIPs) > 0 {
+		allowedIPsNode := node.Appendf("Allowed IPs:")
+		for _, allowedIP := range w.AllowedIPs {
+			allowedIPsNode.Appendf(allowedIP.String())
+		}
 	}
 
 	addressesNode := node.Appendf("Interface addresses:")

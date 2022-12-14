@@ -108,3 +108,11 @@ func DefaultIP(existing net.IP, defaultValue net.IP) (
 	}
 	return defaultValue
 }
+
+func DefaultIPNets(existing, defaultValue []net.IPNet) (
+	result []net.IPNet) {
+	if existing != nil {
+		return existing
+	}
+	return CopyIPNetSlice(defaultValue)
+}

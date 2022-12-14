@@ -30,6 +30,10 @@ func Test_BuildWireguardSettings(t *testing.T) {
 			userSettings: settings.Wireguard{
 				PrivateKey:   stringPtr("private"),
 				PreSharedKey: stringPtr("pre-shared"),
+				AllowedIPs: []net.IPNet{
+					{IP: net.IPv4(2, 2, 2, 2), Mask: net.IPv4Mask(255, 255, 255, 255)},
+					{IP: net.IPv6zero, Mask: net.IPv4Mask(100, 100, 100, 100)},
+				},
 				Addresses: []net.IPNet{
 					{IP: net.IPv4(1, 1, 1, 1), Mask: net.IPv4Mask(255, 255, 255, 255)},
 					{IP: net.IPv6zero, Mask: net.IPv4Mask(255, 255, 255, 255)},
@@ -45,6 +49,9 @@ func Test_BuildWireguardSettings(t *testing.T) {
 				Endpoint: &net.UDPAddr{
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51821,
+				},
+				AllowedIPs: []*net.IPNet{
+					{IP: net.IPv4(2, 2, 2, 2), Mask: net.IPv4Mask(255, 255, 255, 255)},
 				},
 				Addresses: []*net.IPNet{
 					{IP: net.IPv4(1, 1, 1, 1), Mask: net.IPv4Mask(255, 255, 255, 255)},

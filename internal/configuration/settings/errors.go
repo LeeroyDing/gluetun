@@ -38,6 +38,7 @@ var (
 	ErrWireguardEndpointPortNotAllowed = errors.New("endpoint port is not allowed")
 	ErrWireguardEndpointPortNotSet     = errors.New("endpoint port is not set")
 	ErrWireguardEndpointPortSet        = errors.New("endpoint port is set")
+	ErrWireguardAllowedIPv6            = errors.New("allowed IP is IPv6 but IPv6 is not supported")
 	ErrWireguardInterfaceAddressNotSet = errors.New("interface address is not set")
 	ErrWireguardInterfaceAddressIPv6   = errors.New("interface address is IPv6 but IPv6 is not supported")
 	ErrWireguardInterfaceNotValid      = errors.New("interface name is not valid")

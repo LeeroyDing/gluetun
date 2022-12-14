@@ -22,6 +22,10 @@ type Settings struct {
 	PreSharedKey string
 	// Wireguard server endpoint to connect to.
 	Endpoint *net.UDPAddr
+	// AllowedIPs is the IP networks to be routed through
+	// the Wireguard interface.
+	// Note IPv6 addresses are ignored if IPv6 is not supported.
+	AllowedIPs []*net.IPNet
 	// Addresses assigned to the client.
 	// Note IPv6 addresses are ignored if IPv6 is not supported.
 	Addresses []*net.IPNet
@@ -60,6 +64,13 @@ func (s *Settings) SetDefaults() {
 		s.IPv6 = &ipv6
 	}
 
+	if len(s.AllowedIPs) == 0 {
+		s.AllowedIPs = append(s.AllowedIPs, allIPv4())
+		if *s.IPv6 {
+			s.AllowedIPs = append(s.AllowedIPs, allIPv6())
+		}
+	}
+
 	if s.Implementation == "" {
 		const defaultImplementation = "auto"
 		s.Implementation = defaultImplementation
@@ -67,21 +78,25 @@ func (s *Settings) SetDefaults() {
 }
 
 var (
-	ErrInterfaceNameInvalid  = errors.New("invalid interface name")
-	ErrPrivateKeyMissing     = errors.New("private key is missing")
-	ErrPrivateKeyInvalid     = errors.New("cannot parse private key")
-	ErrPublicKeyMissing      = errors.New("public key is missing")
-	ErrPublicKeyInvalid      = errors.New("cannot parse public key")
-	ErrPreSharedKeyInvalid   = errors.New("cannot parse pre-shared key")
-	ErrEndpointMissing       = errors.New("endpoint is missing")
-	ErrEndpointIPMissing     = errors.New("endpoint IP is missing")
-	ErrEndpointPortMissing   = errors.New("endpoint port is missing")
-	ErrAddressMissing        = errors.New("interface address is missing")
-	ErrAddressNil            = errors.New("interface address is nil")
-	ErrAddressIPMissing      = errors.New("interface address IP is missing")
-	ErrAddressMaskMissing    = errors.New("interface address mask is missing")
-	ErrFirewallMarkMissing   = errors.New("firewall mark is missing")
-	ErrImplementationInvalid = errors.New("invalid implementation")
+	ErrInterfaceNameInvalid    = errors.New("invalid interface name")
+	ErrPrivateKeyMissing       = errors.New("private key is missing")
+	ErrPrivateKeyInvalid       = errors.New("cannot parse private key")
+	ErrPublicKeyMissing        = errors.New("public key is missing")
+	ErrPublicKeyInvalid        = errors.New("cannot parse public key")
+	ErrPreSharedKeyInvalid     = errors.New("cannot parse pre-shared key")
+	ErrEndpointMissing         = errors.New("endpoint is missing")
+	ErrEndpointIPMissing       = errors.New("endpoint IP is missing")
+	ErrEndpointPortMissing     = errors.New("endpoint port is missing")
+	ErrAddressMissing          = errors.New("interface address is missing")
+	ErrAllowedIPsMissing       = errors.New("allowed IPs are missing")
+	ErrAllowedIPIsNil          = errors.New("allowed IP is nil")
+	ErrAllowedIPIPIsNil        = errors.New("allowed IP IP field is nil")
+	ErrAllowedIPv6NotSupported = errors.New("allowed IPv6 address not supported")
+	ErrAddressNil              = errors.New("interface address is nil")
+	ErrAddressIPMissing        = errors.New("interface address IP is missing")
+	ErrAddressMaskMissing      = errors.New("interface address mask is missing")
+	ErrFirewallMarkMissing     = errors.New("firewall mark is missing")
+	ErrImplementationInvalid   = errors.New("invalid implementation")
 )
 
 var interfaceNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
@@ -116,6 +131,23 @@ func (s *Settings) Check() (err error) {
 		return ErrEndpointIPMissing
 	case s.Endpoint.Port == 0:
 		return ErrEndpointPortMissing
+	}
+
+	if len(s.AllowedIPs) == 0 {
+		return fmt.Errorf("%w", ErrAllowedIPsMissing)
+	}
+	for i, allowedIP := range s.AllowedIPs {
+		switch {
+		case allowedIP == nil:
+			return fmt.Errorf("%w: for allowed IP %d of %d",
+				ErrAllowedIPIsNil, i+1, len(s.AllowedIPs))
+		case allowedIP.IP == nil:
+			return fmt.Errorf("%w: for allowed IP %d of %d",
+				ErrAllowedIPIPIsNil, i+1, len(s.AllowedIPs))
+		case allowedIP.IP.To4() == nil && !*s.IPv6:
+			return fmt.Errorf("%w: for allowed IP %s",
+				ErrAllowedIPv6NotSupported, allowedIP)
+		}
 	}
 
 	if len(s.Addresses) == 0 {
@@ -210,6 +242,17 @@ func (s Settings) ToLines(settings ToLinesSettings) (lines []string) {
 		endpointStr = s.Endpoint.String()
 	}
 	lines = append(lines, fieldPrefix+"Endpoint: "+endpointStr)
+
+	if len(s.AllowedIPs) > 0 {
+		lines = append(lines, fieldPrefix+"Allowed IPs:")
+		for i, allowedIP := range s.AllowedIPs {
+			prefix := fieldPrefix
+			if i == len(s.AllowedIPs)-1 {
+				prefix = lastFieldPrefix
+			}
+			lines = append(lines, indent+prefix+allowedIP.String())
+		}
+	}
 
 	ipv6Status := "disabled"
 	if *s.IPv6 {

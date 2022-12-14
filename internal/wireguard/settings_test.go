@@ -1,12 +1,10 @@
 package wireguard
 
 import (
-	"errors"
 	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -22,6 +20,7 @@ func Test_Settings_SetDefaults(t *testing.T) {
 			expected: Settings{
 				InterfaceName:  "wg0",
 				FirewallMark:   51820,
+				AllowedIPs:     []*net.IPNet{allIPv4()},
 				IPv6:           ptr(false),
 				Implementation: "auto",
 			},
@@ -39,6 +38,7 @@ func Test_Settings_SetDefaults(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51820,
 				},
+				AllowedIPs:     []*net.IPNet{allIPv4()},
 				IPv6:           ptr(false),
 				Implementation: "auto",
 			},
@@ -51,6 +51,7 @@ func Test_Settings_SetDefaults(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 9999,
 				},
+				AllowedIPs:     []*net.IPNet{allIPv6()},
 				IPv6:           ptr(true),
 				Implementation: "userspace",
 			},
@@ -61,6 +62,7 @@ func Test_Settings_SetDefaults(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 9999,
 				},
+				AllowedIPs:     []*net.IPNet{allIPv6()},
 				IPv6:           ptr(true),
 				Implementation: "userspace",
 			},
@@ -79,7 +81,7 @@ func Test_Settings_SetDefaults(t *testing.T) {
 	}
 }
 
-func Test_Settings_Check(t *testing.T) {
+func Test_Settings_Check(t *testing.T) { //nolint:maintidx
 	t.Parallel()
 
 	const (
@@ -88,37 +90,43 @@ func Test_Settings_Check(t *testing.T) {
 	)
 
 	testCases := map[string]struct {
-		settings Settings
-		err      error
+		settings   Settings
+		errWrapped error
+		errMessage string
 	}{
 		"empty settings": {
-			err: errors.New("invalid interface name: "),
+			errWrapped: ErrInterfaceNameInvalid,
+			errMessage: "invalid interface name: ",
 		},
 		"bad interface name": {
 			settings: Settings{
 				InterfaceName: "$H1T",
 			},
-			err: errors.New("invalid interface name: $H1T"),
+			errWrapped: ErrInterfaceNameInvalid,
+			errMessage: "invalid interface name: $H1T",
 		},
 		"empty private key": {
 			settings: Settings{
 				InterfaceName: "wg0",
 			},
-			err: ErrPrivateKeyMissing,
+			errWrapped: ErrPrivateKeyMissing,
+			errMessage: "private key is missing",
 		},
 		"bad private key": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    "bad key",
 			},
-			err: ErrPrivateKeyInvalid,
+			errWrapped: ErrPrivateKeyInvalid,
+			errMessage: "cannot parse private key",
 		},
 		"empty public key": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 			},
-			err: ErrPublicKeyMissing,
+			errWrapped: ErrPublicKeyMissing,
+			errMessage: "public key is missing",
 		},
 		"bad public key": {
 			settings: Settings{
@@ -126,7 +134,8 @@ func Test_Settings_Check(t *testing.T) {
 				PrivateKey:    validKey1,
 				PublicKey:     "bad key",
 			},
-			err: errors.New("cannot parse public key: bad key"),
+			errWrapped: ErrPublicKeyInvalid,
+			errMessage: "cannot parse public key: bad key",
 		},
 		"bad preshared key": {
 			settings: Settings{
@@ -135,7 +144,8 @@ func Test_Settings_Check(t *testing.T) {
 				PublicKey:     validKey2,
 				PreSharedKey:  "bad key",
 			},
-			err: errors.New("cannot parse pre-shared key"),
+			errWrapped: ErrPreSharedKeyInvalid,
+			errMessage: "cannot parse pre-shared key",
 		},
 		"empty endpoint": {
 			settings: Settings{
@@ -143,7 +153,8 @@ func Test_Settings_Check(t *testing.T) {
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
 			},
-			err: ErrEndpointMissing,
+			errWrapped: ErrEndpointMissing,
+			errMessage: "endpoint is missing",
 		},
 		"nil endpoint IP": {
 			settings: Settings{
@@ -152,7 +163,8 @@ func Test_Settings_Check(t *testing.T) {
 				PublicKey:     validKey2,
 				Endpoint:      &net.UDPAddr{},
 			},
-			err: ErrEndpointIPMissing,
+			errWrapped: ErrEndpointIPMissing,
+			errMessage: "endpoint IP is missing",
 		},
 		"nil endpoint port": {
 			settings: Settings{
@@ -163,7 +175,66 @@ func Test_Settings_Check(t *testing.T) {
 					IP: net.IPv4(1, 2, 3, 4),
 				},
 			},
-			err: ErrEndpointPortMissing,
+			errWrapped: ErrEndpointPortMissing,
+			errMessage: "endpoint port is missing",
+		},
+		"no allowed IP": {
+			settings: Settings{
+				InterfaceName: "wg0",
+				PrivateKey:    validKey1,
+				PublicKey:     validKey2,
+				Endpoint: &net.UDPAddr{
+					IP:   net.IPv4(1, 2, 3, 4),
+					Port: 51820,
+				},
+			},
+			errWrapped: ErrAllowedIPsMissing,
+			errMessage: "allowed IPs are missing",
+		},
+		"nil allowed IP": {
+			settings: Settings{
+				InterfaceName: "wg0",
+				PrivateKey:    validKey1,
+				PublicKey:     validKey2,
+				Endpoint: &net.UDPAddr{
+					IP:   net.IPv4(1, 2, 3, 4),
+					Port: 51820,
+				},
+				AllowedIPs: []*net.IPNet{nil},
+			},
+			errWrapped: ErrAllowedIPIsNil,
+			errMessage: "allowed IP is nil: for allowed IP 1 of 1",
+		},
+		"nil allowed IP IP address": {
+			settings: Settings{
+				InterfaceName: "wg0",
+				PrivateKey:    validKey1,
+				PublicKey:     validKey2,
+				Endpoint: &net.UDPAddr{
+					IP:   net.IPv4(1, 2, 3, 4),
+					Port: 51820,
+				},
+				AllowedIPs: []*net.IPNet{{}},
+			},
+			errWrapped: ErrAllowedIPIPIsNil,
+			errMessage: "allowed IP IP field is nil: for allowed IP 1 of 1",
+		},
+		"ipv6 allowed IP": {
+			settings: Settings{
+				InterfaceName: "wg0",
+				PrivateKey:    validKey1,
+				PublicKey:     validKey2,
+				Endpoint: &net.UDPAddr{
+					IP:   net.IPv4(1, 2, 3, 4),
+					Port: 51820,
+				},
+				AllowedIPs: []*net.IPNet{
+					allIPv6(),
+				},
+				IPv6: ptrTo(false),
+			},
+			errWrapped: ErrAllowedIPv6NotSupported,
+			errMessage: "allowed IPv6 address not supported: for allowed IP ::/0",
 		},
 		"no address": {
 			settings: Settings{
@@ -174,8 +245,13 @@ func Test_Settings_Check(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51820,
 				},
+				AllowedIPs: []*net.IPNet{
+					allIPv6(),
+				},
+				IPv6: ptrTo(true),
 			},
-			err: ErrAddressMissing,
+			errWrapped: ErrAddressMissing,
+			errMessage: "interface address is missing",
 		},
 		"nil address": {
 			settings: Settings{
@@ -186,9 +262,14 @@ func Test_Settings_Check(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51820,
 				},
+				AllowedIPs: []*net.IPNet{
+					allIPv6(),
+				},
+				IPv6:      ptrTo(true),
 				Addresses: []*net.IPNet{nil},
 			},
-			err: errors.New("interface address is nil: for address 1 of 1"),
+			errWrapped: ErrAddressNil,
+			errMessage: "interface address is nil: for address 1 of 1",
 		},
 		"nil address IP": {
 			settings: Settings{
@@ -199,9 +280,14 @@ func Test_Settings_Check(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51820,
 				},
+				AllowedIPs: []*net.IPNet{
+					allIPv6(),
+				},
+				IPv6:      ptrTo(true),
 				Addresses: []*net.IPNet{{}},
 			},
-			err: errors.New("interface address IP is missing: for address 1 of 1"),
+			errWrapped: ErrAddressIPMissing,
+			errMessage: "interface address IP is missing: for address 1 of 1",
 		},
 		"nil address mask": {
 			settings: Settings{
@@ -212,9 +298,14 @@ func Test_Settings_Check(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51820,
 				},
+				AllowedIPs: []*net.IPNet{
+					allIPv6(),
+				},
+				IPv6:      ptrTo(true),
 				Addresses: []*net.IPNet{{IP: net.IPv4(1, 2, 3, 4)}},
 			},
-			err: errors.New("interface address mask is missing: for address 1 of 1"),
+			errWrapped: ErrAddressMaskMissing,
+			errMessage: "interface address mask is missing: for address 1 of 1",
 		},
 		"zero firewall mark": {
 			settings: Settings{
@@ -225,9 +316,14 @@ func Test_Settings_Check(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51820,
 				},
+				AllowedIPs: []*net.IPNet{
+					allIPv6(),
+				},
+				IPv6:      ptrTo(true),
 				Addresses: []*net.IPNet{{IP: net.IPv4(1, 2, 3, 4), Mask: net.CIDRMask(24, 32)}},
 			},
-			err: ErrFirewallMarkMissing,
+			errWrapped: ErrFirewallMarkMissing,
+			errMessage: "firewall mark is missing",
 		},
 		"invalid implementation": {
 			settings: Settings{
@@ -238,11 +334,16 @@ func Test_Settings_Check(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51820,
 				},
+				AllowedIPs: []*net.IPNet{
+					allIPv6(),
+				},
+				IPv6:           ptrTo(true),
 				Addresses:      []*net.IPNet{{IP: net.IPv4(1, 2, 3, 4), Mask: net.CIDRMask(24, 32)}},
 				FirewallMark:   999,
 				Implementation: "x",
 			},
-			err: errors.New("invalid implementation: x"),
+			errWrapped: ErrImplementationInvalid,
+			errMessage: "invalid implementation: x",
 		},
 		"all valid": {
 			settings: Settings{
@@ -253,6 +354,10 @@ func Test_Settings_Check(t *testing.T) {
 					IP:   net.IPv4(1, 2, 3, 4),
 					Port: 51820,
 				},
+				AllowedIPs: []*net.IPNet{
+					allIPv6(),
+				},
+				IPv6:           ptrTo(true),
 				Addresses:      []*net.IPNet{{IP: net.IPv4(1, 2, 3, 4), Mask: net.CIDRMask(24, 32)}},
 				FirewallMark:   999,
 				Implementation: "userspace",
@@ -267,11 +372,9 @@ func Test_Settings_Check(t *testing.T) {
 
 			err := testCase.settings.Check()
 
-			if testCase.err != nil {
-				require.Error(t, err)
-				assert.Equal(t, testCase.err.Error(), err.Error())
-			} else {
-				assert.NoError(t, err)
+			assert.ErrorIs(t, err, testCase.errWrapped)
+			if testCase.errWrapped != nil {
+				assert.EqualError(t, err, testCase.errMessage)
 			}
 		})
 	}

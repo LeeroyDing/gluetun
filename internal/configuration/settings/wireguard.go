@@ -49,6 +49,7 @@ func (w Wireguard) validate(vpnProvider string, ipv6Supported bool) (err error) 
 		providers.Custom,
 		providers.Ivpn,
 		providers.Mullvad,
+		providers.Nordvpn,
 		providers.Surfshark,
 		providers.Windscribe,
 	) {
